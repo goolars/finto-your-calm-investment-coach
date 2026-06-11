@@ -147,7 +147,12 @@ function clampMonthly(m: Partial<StatementMonthly>): StatementMonthly {
     income_stability: stab(m.income_stability),
     essential_spend_avg: Math.max(0, num(m.essential_spend_avg, 0)),
     discretionary_spend_avg: Math.max(0, num(m.discretionary_spend_avg, 0)),
-    savings_rate: Math.max(-1, Math.min(1, num(m.savings_rate, 0))),
+    savings_rate: (() => {
+      let v = num(m.savings_rate, 0);
+      if (v > 1.5 || v < -1.5) v = v / 100; // model sometimes returns percent
+      return Math.max(-1, Math.min(1, v));
+    })(),
+
     buffer_months: Math.max(0, num(m.buffer_months, 0)),
     fixed_obligation_ratio: Math.max(0, Math.min(2, num(m.fixed_obligation_ratio, 0))),
     expense_volatility: vol(m.expense_volatility),
