@@ -273,7 +273,7 @@ function Coach() {
               }
             }}
             rows={1}
-            placeholder="e.g. Where is most of my money going? Should I sell in a dip?"
+            placeholder={persona.placeholder}
             className="flex-1 resize-none bg-transparent px-3 py-2 text-sm focus:outline-none"
           />
           <button
