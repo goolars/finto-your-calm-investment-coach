@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
+import { Shield, Flame } from "lucide-react";
 import { Shell } from "@/components/finto/Shell";
 import { useFintoState } from "@/lib/finto/storage";
 import { summarizeState } from "@/lib/finto/allocation";
@@ -13,17 +14,43 @@ export const Route = createFileRoute("/coach")({
 });
 
 type Msg = { role: "user" | "assistant"; content: string };
+type Personality = "advisor" | "guru";
+
+const PERSONAS: Record<Personality, {
+  label: string;
+  tagline: string;
+  icon: typeof Shield;
+  accent: string;
+  greeting: string;
+  placeholder: string;
+}> = {
+  advisor: {
+    label: "The Advisor",
+    tagline: "Calm. Disciplined. Holds you to your plan.",
+    icon: Shield,
+    accent: "text-primary",
+    greeting:
+      "I'm Finto. I won't tell you what to buy. I'll hold you to your own plan. What's on your mind?",
+    placeholder: "e.g. Markets are down 15%, should I sell?",
+  },
+  guru: {
+    label: "Maxx Rendite",
+    tagline: "🔥 6-figure months. Inner Circle open. (Parody — spot the red flags.)",
+    icon: Flame,
+    accent: "text-orange-500",
+    greeting:
+      "YO 🔥 it's your boy Maxx Rendite — broke mindset stays broke, fam. You ready to PRINT? Drop me your move and I'll show you how the real ones do it. 💸🚀",
+    placeholder: "e.g. Should I YOLO my paycheck into 0DTE calls?",
+  },
+};
 
 function Coach() {
   const { state, setState, hydrated } = useFintoState();
   const chat = useServerFn(coachChat);
   const analyze = useServerFn(analyzeStatement);
+  const [personality, setPersonality] = useState<Personality>("advisor");
   const [messages, setMessages] = useState<Msg[]>([
-    {
-      role: "assistant",
-      content:
-        "I'm Finto. I won't tell you what to buy. I'll hold you to your own plan. What's on your mind?",
-    },
+    { role: "assistant", content: PERSONAS.advisor.greeting },
   ]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -36,7 +63,15 @@ function Coach() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
 
+  function switchPersonality(p: Personality) {
+    if (p === personality) return;
+    setPersonality(p);
+    setMessages([{ role: "assistant", content: PERSONAS[p].greeting }]);
+  }
+
+  const persona = PERSONAS[personality];
   const summary = hydrated ? summarizeState(state) : null;
+
 
   async function onUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
