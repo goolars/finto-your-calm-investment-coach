@@ -4,7 +4,8 @@ import { Shell } from "@/components/finto/Shell";
 import { useFintoState } from "@/lib/finto/storage";
 import { summarizeState } from "@/lib/finto/allocation";
 import { useServerFn } from "@tanstack/react-start";
-import { coachChat } from "@/lib/finto/finto.functions";
+import { analyzeStatement, coachChat } from "@/lib/finto/finto.functions";
+import { BAND_LABEL } from "@/lib/finto/allocation";
 
 export const Route = createFileRoute("/coach")({
   head: () => ({ meta: [{ title: "The coach — Finto" }] }),
@@ -14,8 +15,9 @@ export const Route = createFileRoute("/coach")({
 type Msg = { role: "user" | "assistant"; content: string };
 
 function Coach() {
-  const { state, hydrated } = useFintoState();
+  const { state, setState, hydrated } = useFintoState();
   const chat = useServerFn(coachChat);
+  const analyze = useServerFn(analyzeStatement);
   const [messages, setMessages] = useState<Msg[]>([
     {
       role: "assistant",
@@ -25,13 +27,72 @@ function Coach() {
   ]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
 
   const summary = hydrated ? summarizeState(state) : null;
+
+  async function onUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadError(null);
+    setUploading(true);
+    try {
+      const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+      const payload: {
+        text?: string;
+        pdfBase64?: string;
+        mimeType?: string;
+        filename?: string;
+        horizonYears: number;
+        currency: string;
+      } = {
+        horizonYears: state.goals?.horizonYears ?? 10,
+        currency: state.goals?.currency ?? "EUR",
+      };
+      if (isPdf) {
+        const buf = await file.arrayBuffer();
+        const bytes = new Uint8Array(buf);
+        let bin = "";
+        for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+        payload.pdfBase64 = btoa(bin);
+        payload.mimeType = file.type || "application/pdf";
+        payload.filename = file.name;
+      } else {
+        payload.text = await file.text();
+      }
+      const res = await analyze({ data: payload });
+      setState((s) => ({ ...s, statement: res }));
+      setMessages((m) => [
+        ...m,
+        {
+          role: "assistant",
+          content: `Got it — I read your statement (${file.name}). Monthly income ≈ ${Math.round(
+            res.monthly.income_avg,
+          )} ${payload.currency}, essentials ≈ ${Math.round(
+            res.monthly.essential_spend_avg,
+          )}, discretionary ≈ ${Math.round(
+            res.monthly.discretionary_spend_avg,
+          )}, savings rate ≈ ${Math.round(res.monthly.savings_rate * 100)}%, buffer ≈ ${
+            res.monthly.buffer_months
+          } months. Capacity reads as ${BAND_LABEL[res.capacity_band]} (${res.capacity_score}/100). Ask me anything about your spending or the plan.`,
+        },
+      ]);
+    } catch (err) {
+      console.error(err);
+      setUploadError(err instanceof Error ? err.message : "Couldn't read that file.");
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
 
   async function send() {
     const text = input.trim();
