@@ -46,8 +46,18 @@ function Coach() {
           messages: next.map((m) => ({ role: m.role, content: m.content })),
           context: {
             goals: state.goals,
-            target: summary?.target ?? null,
+            target: summary?.target.allocation ?? null,
             current: summary?.agg.pct ?? null,
+            statement: state.statement
+              ? {
+                  monthly: state.statement.monthly,
+                  capacity_score: state.statement.capacity_score,
+                  capacity_band: state.statement.capacity_band,
+                  behavioral_flags: state.statement.behavioral_flags,
+                  governing_band: summary?.target.governing ?? null,
+                  tolerance_band: summary?.target.tolerance ?? null,
+                }
+              : null,
           },
         },
       });

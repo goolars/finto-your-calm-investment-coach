@@ -3,7 +3,7 @@ import type { FintoState } from "./types";
 
 const KEY = "finto-state-v1";
 
-const empty: FintoState = { goals: null, holdings: [] };
+const empty: FintoState = { goals: null, holdings: [], statement: null };
 
 export function loadState(): FintoState {
   if (typeof window === "undefined") return empty;

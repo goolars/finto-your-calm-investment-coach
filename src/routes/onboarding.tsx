@@ -3,16 +3,22 @@ import { useState } from "react";
 import { Shell } from "@/components/finto/Shell";
 import { useFintoState } from "@/lib/finto/storage";
 import { useServerFn } from "@tanstack/react-start";
-import { lookupIsin } from "@/lib/finto/finto.functions";
-import type { Category, Goals, Holding } from "@/lib/finto/types";
+import { analyzeStatement, lookupIsin } from "@/lib/finto/finto.functions";
+import type { Category, Goals, Holding, StatementProfile, StatementMonthly } from "@/lib/finto/types";
 import { CATEGORY_LABELS } from "@/lib/finto/types";
+import {
+  applyBehavioralAdjustments,
+  bandFromScore,
+  BAND_LABEL,
+  computeCapacityScore,
+} from "@/lib/finto/allocation";
 
 export const Route = createFileRoute("/onboarding")({
   head: () => ({ meta: [{ title: "Onboarding — Finto" }] }),
   component: Onboarding,
 });
 
-const STEPS = ["Goals", "Portfolio", "Review"] as const;
+const STEPS = ["Goals", "Portfolio", "Statement", "Review"] as const;
 
 function Onboarding() {
   const { state, setState, hydrated } = useFintoState();
@@ -51,8 +57,21 @@ function Onboarding() {
           />
         )}
         {step === 2 && (
-          <ReviewStep
+          <StatementStep
+            goals={state.goals}
+            statement={state.statement}
+            setStatement={(p) => setState((s) => ({ ...s, statement: p }))}
             onBack={() => setStep(1)}
+            onNext={() => setStep(3)}
+            onSkip={() => {
+              setState((s) => ({ ...s, statement: null }));
+              setStep(3);
+            }}
+          />
+        )}
+        {step === 3 && (
+          <ReviewStep
+            onBack={() => setStep(2)}
             onDone={() => navigate({ to: "/dashboard" })}
           />
         )}
@@ -271,13 +290,225 @@ function PortfolioStep({
   );
 }
 
+function StatementStep({
+  goals,
+  statement,
+  setStatement,
+  onBack,
+  onNext,
+  onSkip,
+}: {
+  goals: Goals | null;
+  statement: StatementProfile | null;
+  setStatement: (p: StatementProfile | null) => void;
+  onBack: () => void;
+  onNext: () => void;
+  onSkip: () => void;
+}) {
+  const analyze = useServerFn(analyzeStatement);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [filename, setFilename] = useState<string | null>(null);
+
+  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError(null);
+    setFilename(file.name);
+    setLoading(true);
+    try {
+      // Best-effort read as text. For most CSVs this is clean; for PDFs it's
+      // garbage-with-strings — the server prompt tells the LLM to do its best.
+      const text = await file.text();
+      const res = await analyze({
+        data: {
+          text,
+          horizonYears: goals?.horizonYears ?? 10,
+          currency: goals?.currency ?? "EUR",
+        },
+      });
+      setStatement(res);
+    } catch (err) {
+      console.error(err);
+      setError(err instanceof Error ? err.message : "Couldn't analyse the file.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function updateMonthly(patch: Partial<StatementMonthly>) {
+    if (!statement || !goals) return;
+    const monthly = { ...statement.monthly, ...patch };
+    const score = computeCapacityScore(monthly, goals.horizonYears);
+    const adjusted = applyBehavioralAdjustments(bandFromScore(score), statement.behavioral_flags);
+    setStatement({
+      ...statement,
+      monthly,
+      capacity_score: score,
+      capacity_band: adjusted.band,
+      source: "edited",
+    });
+  }
+
+  return (
+    <div>
+      <h1 className="font-serif text-3xl mb-2">Add a bank statement (optional)</h1>
+      <p className="text-muted-foreground mb-6">
+        A current/checking statement covering 3–12 months lets us read your real risk capacity —
+        not just what you said.
+      </p>
+
+      <div className="mb-6 rounded-2xl border border-border bg-secondary/40 p-4 text-sm leading-relaxed">
+        <div className="font-medium mb-1">Privacy</div>
+        Your file is analysed on the server, never stored. Only aggregated, anonymised figures —
+        monthly income, essential spend, savings rate, buffer — come back. No transaction
+        descriptions or counterparties are saved.
+      </div>
+
+      {!statement && (
+        <div className="rounded-2xl border border-dashed border-border bg-card p-8 text-center">
+          <label className="inline-block cursor-pointer rounded-full bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90">
+            {loading ? "Analysing…" : "Choose CSV or PDF"}
+            <input type="file" accept=".csv,text/csv,application/pdf,.pdf" className="hidden" onChange={onFile} disabled={loading} />
+          </label>
+          {filename && <div className="mt-3 text-xs text-muted-foreground">{filename}</div>}
+          {error && <div className="mt-3 text-xs text-destructive">{error}</div>}
+          <div className="mt-6">
+            <button onClick={onSkip} className="text-sm text-muted-foreground hover:text-foreground underline">
+              Skip — I'll just use my answers
+            </button>
+          </div>
+        </div>
+      )}
+
+      {statement && goals && (
+        <div className="rounded-2xl border border-border bg-card p-5">
+          <div className="flex flex-wrap items-baseline justify-between gap-3 mb-4">
+            <h2 className="font-serif text-xl">Review what we found</h2>
+            <span className="text-xs text-muted-foreground">
+              Confidence: {statement.confidence} · capacity {statement.capacity_score}/100 ({BAND_LABEL[statement.capacity_band]})
+            </span>
+          </div>
+          <p className="text-sm text-muted-foreground mb-5">
+            We estimated these from your statement — correct anything that looks off.
+          </p>
+
+          <div className="grid sm:grid-cols-2 gap-4">
+            <Field label={`Monthly income (${goals.currency})`}>
+              <input
+                type="number"
+                className={inputCls}
+                value={Math.round(statement.monthly.income_avg)}
+                onChange={(e) => updateMonthly({ income_avg: +e.target.value })}
+              />
+            </Field>
+            <Field label="Income stability">
+              <select
+                className={inputCls}
+                value={statement.monthly.income_stability}
+                onChange={(e) => updateMonthly({ income_stability: e.target.value as StatementMonthly["income_stability"] })}
+              >
+                <option value="stable">Stable</option>
+                <option value="variable">Variable</option>
+                <option value="irregular">Irregular</option>
+              </select>
+            </Field>
+            <Field label={`Essential spend / month (${goals.currency})`}>
+              <input
+                type="number"
+                className={inputCls}
+                value={Math.round(statement.monthly.essential_spend_avg)}
+                onChange={(e) => updateMonthly({ essential_spend_avg: +e.target.value })}
+              />
+            </Field>
+            <Field label={`Discretionary spend / month (${goals.currency})`}>
+              <input
+                type="number"
+                className={inputCls}
+                value={Math.round(statement.monthly.discretionary_spend_avg)}
+                onChange={(e) => updateMonthly({ discretionary_spend_avg: +e.target.value })}
+              />
+            </Field>
+            <Field label="Savings rate (%)">
+              <input
+                type="number"
+                className={inputCls}
+                value={Math.round(statement.monthly.savings_rate * 100)}
+                onChange={(e) => updateMonthly({ savings_rate: +e.target.value / 100 })}
+              />
+            </Field>
+            <Field label="Buffer (months)">
+              <input
+                type="number"
+                step="0.1"
+                className={inputCls}
+                value={statement.monthly.buffer_months}
+                onChange={(e) => updateMonthly({ buffer_months: +e.target.value })}
+              />
+            </Field>
+            <Field label="Fixed obligation ratio (%)" hint="Recurring essentials ÷ income">
+              <input
+                type="number"
+                className={inputCls}
+                value={Math.round(statement.monthly.fixed_obligation_ratio * 100)}
+                onChange={(e) => updateMonthly({ fixed_obligation_ratio: +e.target.value / 100 })}
+              />
+            </Field>
+            <Field label="Expense volatility">
+              <select
+                className={inputCls}
+                value={statement.monthly.expense_volatility}
+                onChange={(e) => updateMonthly({ expense_volatility: e.target.value as StatementMonthly["expense_volatility"] })}
+              >
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+            </Field>
+          </div>
+
+          {statement.notes.length > 0 && (
+            <ul className="mt-5 space-y-1.5 text-sm text-muted-foreground">
+              {statement.notes.map((n, i) => (
+                <li key={i}>— {n}</li>
+              ))}
+            </ul>
+          )}
+
+          <div className="mt-5 flex flex-wrap gap-3">
+            <button
+              onClick={() => {
+                setStatement(null);
+                setFilename(null);
+              }}
+              className="text-sm text-muted-foreground hover:text-foreground underline"
+            >
+              Discard and re-upload
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="mt-8 flex justify-between">
+        <button onClick={onBack} className="text-sm text-muted-foreground hover:text-foreground">← Back</button>
+        <button
+          onClick={onNext}
+          className="rounded-full bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90"
+        >
+          Continue
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ReviewStep({ onBack, onDone }: { onBack: () => void; onDone: () => void }) {
   return (
     <div>
       <h1 className="font-serif text-3xl mb-3">Ready.</h1>
       <p className="text-muted-foreground mb-8">
-        Next we'll show your current split across the four categories, the target plan derived from your goals,
-        and the 2–3 gaps that matter most.
+        Next we'll show your current split across the four categories, the target plan derived from your
+        goals and (if provided) your statement, and the 2–3 gaps that matter most.
       </p>
       <div className="flex justify-between">
         <button onClick={onBack} className="text-sm text-muted-foreground hover:text-foreground">← Back</button>
