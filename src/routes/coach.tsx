@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
+import { Shield, Flame } from "lucide-react";
 import { Shell } from "@/components/finto/Shell";
 import { useFintoState } from "@/lib/finto/storage";
 import { summarizeState } from "@/lib/finto/allocation";
@@ -13,17 +14,43 @@ export const Route = createFileRoute("/coach")({
 });
 
 type Msg = { role: "user" | "assistant"; content: string };
+type Personality = "advisor" | "guru";
+
+const PERSONAS: Record<Personality, {
+  label: string;
+  tagline: string;
+  icon: typeof Shield;
+  accent: string;
+  greeting: string;
+  placeholder: string;
+}> = {
+  advisor: {
+    label: "The Advisor",
+    tagline: "Calm. Disciplined. Holds you to your plan.",
+    icon: Shield,
+    accent: "text-primary",
+    greeting:
+      "I'm Finto. I won't tell you what to buy. I'll hold you to your own plan. What's on your mind?",
+    placeholder: "e.g. Markets are down 15%, should I sell?",
+  },
+  guru: {
+    label: "Maxx Rendite",
+    tagline: "🔥 6-figure months. Inner Circle open. (Parody — spot the red flags.)",
+    icon: Flame,
+    accent: "text-orange-500",
+    greeting:
+      "YO 🔥 it's your boy Maxx Rendite — broke mindset stays broke, fam. You ready to PRINT? Drop me your move and I'll show you how the real ones do it. 💸🚀",
+    placeholder: "e.g. Should I YOLO my paycheck into 0DTE calls?",
+  },
+};
 
 function Coach() {
   const { state, setState, hydrated } = useFintoState();
   const chat = useServerFn(coachChat);
   const analyze = useServerFn(analyzeStatement);
+  const [personality, setPersonality] = useState<Personality>("advisor");
   const [messages, setMessages] = useState<Msg[]>([
-    {
-      role: "assistant",
-      content:
-        "I'm Finto. I won't tell you what to buy. I'll hold you to your own plan. What's on your mind?",
-    },
+    { role: "assistant", content: PERSONAS.advisor.greeting },
   ]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -36,7 +63,15 @@ function Coach() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
 
+  function switchPersonality(p: Personality) {
+    if (p === personality) return;
+    setPersonality(p);
+    setMessages([{ role: "assistant", content: PERSONAS[p].greeting }]);
+  }
+
+  const persona = PERSONAS[personality];
   const summary = hydrated ? summarizeState(state) : null;
+
 
   async function onUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -105,6 +140,8 @@ function Coach() {
       const res = await chat({
         data: {
           messages: next.map((m) => ({ role: m.role, content: m.content })),
+          personality,
+
           context: {
             goals: state.goals,
             target: summary?.target.allocation ?? null,
@@ -135,18 +172,53 @@ function Coach() {
     <Shell>
       <div className="mx-auto max-w-3xl px-5 py-10 flex flex-col" style={{ minHeight: "calc(100vh - 200px)" }}>
         <div className="mb-4 flex items-baseline justify-between">
-          <div>
-            <h1 className="font-serif text-3xl">The coach</h1>
-            <p className="text-sm text-muted-foreground">Knows your goals and your target plan. Doesn't pitch products.</p>
+          <div className="flex items-center gap-3">
+            <span className={`flex h-10 w-10 items-center justify-center rounded-full bg-secondary ${persona.accent}`}>
+              <persona.icon size={20} />
+            </span>
+            <div>
+              <h1 className="font-serif text-2xl leading-tight">{persona.label}</h1>
+              <p className="text-xs text-muted-foreground">{persona.tagline}</p>
+            </div>
           </div>
           {!state.goals && (
             <Link to="/onboarding" className="text-sm text-primary underline">Set up plan</Link>
           )}
         </div>
 
+        <div className="mb-3 flex gap-2">
+          {(Object.keys(PERSONAS) as Personality[]).map((p) => {
+            const meta = PERSONAS[p];
+            const active = p === personality;
+            const Icon = meta.icon;
+            return (
+              <button
+                key={p}
+                onClick={() => switchPersonality(p)}
+                className={`flex-1 rounded-2xl border p-3 text-left transition ${
+                  active
+                    ? "border-foreground bg-card"
+                    : "border-border bg-card/40 hover:bg-card"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Icon size={16} className={meta.accent} />
+                  <span className="text-sm font-medium">{meta.label}</span>
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground">{meta.tagline}</div>
+              </button>
+            );
+          })}
+        </div>
+
         <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-4 rounded-2xl border border-border bg-card p-5">
           {messages.map((m, i) => (
-            <div key={i} className={m.role === "user" ? "flex justify-end" : ""}>
+            <div key={i} className={m.role === "user" ? "flex justify-end" : "flex gap-2"}>
+              {m.role === "assistant" && (
+                <span className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-secondary ${persona.accent}`}>
+                  <persona.icon size={14} />
+                </span>
+              )}
               <div
                 className={
                   m.role === "user"
@@ -160,6 +232,7 @@ function Coach() {
           ))}
           {busy && <div className="text-sm text-muted-foreground">Thinking…</div>}
         </div>
+
 
         <div className="mt-3 flex items-center justify-between gap-3 text-xs text-muted-foreground">
           <div className="flex items-center gap-2">
@@ -200,7 +273,7 @@ function Coach() {
               }
             }}
             rows={1}
-            placeholder="e.g. Where is most of my money going? Should I sell in a dip?"
+            placeholder={persona.placeholder}
             className="flex-1 resize-none bg-transparent px-3 py-2 text-sm focus:outline-none"
           />
           <button
