@@ -172,18 +172,53 @@ function Coach() {
     <Shell>
       <div className="mx-auto max-w-3xl px-5 py-10 flex flex-col" style={{ minHeight: "calc(100vh - 200px)" }}>
         <div className="mb-4 flex items-baseline justify-between">
-          <div>
-            <h1 className="font-serif text-3xl">The coach</h1>
-            <p className="text-sm text-muted-foreground">Knows your goals and your target plan. Doesn't pitch products.</p>
+          <div className="flex items-center gap-3">
+            <span className={`flex h-10 w-10 items-center justify-center rounded-full bg-secondary ${persona.accent}`}>
+              <persona.icon size={20} />
+            </span>
+            <div>
+              <h1 className="font-serif text-2xl leading-tight">{persona.label}</h1>
+              <p className="text-xs text-muted-foreground">{persona.tagline}</p>
+            </div>
           </div>
           {!state.goals && (
             <Link to="/onboarding" className="text-sm text-primary underline">Set up plan</Link>
           )}
         </div>
 
+        <div className="mb-3 flex gap-2">
+          {(Object.keys(PERSONAS) as Personality[]).map((p) => {
+            const meta = PERSONAS[p];
+            const active = p === personality;
+            const Icon = meta.icon;
+            return (
+              <button
+                key={p}
+                onClick={() => switchPersonality(p)}
+                className={`flex-1 rounded-2xl border p-3 text-left transition ${
+                  active
+                    ? "border-foreground bg-card"
+                    : "border-border bg-card/40 hover:bg-card"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Icon size={16} className={meta.accent} />
+                  <span className="text-sm font-medium">{meta.label}</span>
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground">{meta.tagline}</div>
+              </button>
+            );
+          })}
+        </div>
+
         <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-4 rounded-2xl border border-border bg-card p-5">
           {messages.map((m, i) => (
-            <div key={i} className={m.role === "user" ? "flex justify-end" : ""}>
+            <div key={i} className={m.role === "user" ? "flex justify-end" : "flex gap-2"}>
+              {m.role === "assistant" && (
+                <span className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-secondary ${persona.accent}`}>
+                  <persona.icon size={14} />
+                </span>
+              )}
               <div
                 className={
                   m.role === "user"
@@ -197,6 +232,7 @@ function Coach() {
           ))}
           {busy && <div className="text-sm text-muted-foreground">Thinking…</div>}
         </div>
+
 
         <div className="mt-3 flex items-center justify-between gap-3 text-xs text-muted-foreground">
           <div className="flex items-center gap-2">
