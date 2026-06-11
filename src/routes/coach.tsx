@@ -161,6 +161,34 @@ function Coach() {
           {busy && <div className="text-sm text-muted-foreground">Thinking…</div>}
         </div>
 
+        <div className="mt-3 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              disabled={uploading}
+              className="rounded-full border border-border px-3 py-1.5 hover:bg-secondary disabled:opacity-50"
+            >
+              {uploading ? "Reading…" : state.statement ? "Replace statement" : "Upload statement (PDF/CSV)"}
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".csv,text/csv,application/pdf,.pdf"
+              className="hidden"
+              onChange={onUpload}
+            />
+            {state.statement && (
+              <span>
+                On file: income ≈ {Math.round(state.statement.monthly.income_avg)}, savings rate{" "}
+                {Math.round(state.statement.monthly.savings_rate * 100)}%, buffer{" "}
+                {state.statement.monthly.buffer_months.toFixed(1)}m
+              </span>
+            )}
+          </div>
+          {uploadError && <span className="text-destructive">{uploadError}</span>}
+        </div>
+
         <div className="mt-3 rounded-2xl border border-border bg-card p-2 flex gap-2">
           <textarea
             value={input}
@@ -172,7 +200,7 @@ function Coach() {
               }
             }}
             rows={1}
-            placeholder="e.g. Markets are down 15%, should I sell?"
+            placeholder="e.g. Where is most of my money going? Should I sell in a dip?"
             className="flex-1 resize-none bg-transparent px-3 py-2 text-sm focus:outline-none"
           />
           <button
@@ -184,8 +212,9 @@ function Coach() {
           </button>
         </div>
         <p className="mt-3 text-xs text-muted-foreground">
-          Educational information about asset allocation — not personalized investment advice.
+          Educational information about asset allocation — not personalized investment advice. Statements are analysed server-side and never stored.
         </p>
+
       </div>
     </Shell>
   );
