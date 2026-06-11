@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Shell } from "@/components/finto/Shell";
 import { useFintoState } from "@/lib/finto/storage";
-import { summarizeState } from "@/lib/finto/allocation";
+import { summarizeState, BAND_LABEL } from "@/lib/finto/allocation";
 import { CATEGORY_LABELS, type Allocation, type Category } from "@/lib/finto/types";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 
@@ -38,18 +38,43 @@ function Dashboard() {
 
   const { agg, target, gaps } = summary;
   const topGaps = gaps.filter((g) => Math.abs(g.delta) >= 3).slice(0, 3);
+  const stmt = state.statement;
 
   return (
     <Shell>
       <div className="mx-auto max-w-5xl px-5 py-12">
         <h1 className="font-serif text-3xl mb-2">Your allocation</h1>
-        <p className="text-muted-foreground mb-10">
+        <p className="text-muted-foreground mb-6">
           Total portfolio: <span className="text-foreground font-medium">{agg.total.toLocaleString()} {state.goals.currency}</span>
         </p>
 
+        {stmt && (
+          <div className="mb-8 rounded-2xl border border-border bg-card p-5">
+            <div className="flex flex-wrap items-baseline justify-between gap-3 mb-2">
+              <h2 className="font-serif text-xl">Capacity & comfort</h2>
+              <span className="text-xs text-muted-foreground">
+                Score {stmt.capacity_score}/100 · confidence {stmt.confidence}
+              </span>
+            </div>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Your finances support <span className="text-foreground font-medium">{BAND_LABEL[stmt.capacity_band]}</span> risk.
+              You said you're comfortable with <span className="text-foreground font-medium">{BAND_LABEL[target.tolerance]}</span>.
+              We size the plan to the lower of the two — <span className="text-foreground font-medium">{BAND_LABEL[target.governing]}</span> —
+              because a plan you can hold beats one you'd panic-sell.
+            </p>
+            {target.notes.length > 0 && (
+              <ul className="mt-3 space-y-1.5 text-sm">
+                {target.notes.map((n, i) => (
+                  <li key={i} className="text-muted-foreground">— {n}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
         <div className="grid md:grid-cols-2 gap-6">
           <AllocationCard title="Today" allocation={agg.pct} />
-          <AllocationCard title="Target plan" allocation={target} />
+          <AllocationCard title="Target plan" allocation={target.allocation} />
         </div>
 
         <section className="mt-12">
