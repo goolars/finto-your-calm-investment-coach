@@ -159,6 +159,9 @@ export const analyzeStatement = createServerFn({ method: "POST" })
     z
       .object({
         text: z.string().max(120_000).optional().default(""),
+        pdfBase64: z.string().max(15_000_000).optional(),
+        mimeType: z.string().optional(),
+        filename: z.string().optional(),
         horizonYears: z.number().min(0).max(80),
         currency: z.string().optional().default("EUR"),
       })
@@ -166,7 +169,9 @@ export const analyzeStatement = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }): Promise<StatementProfile> => {
     const hasKey = !!process.env.LOVABLE_API_KEY;
-    const hasContent = data.text.trim().length > 40;
+    const hasPdf = !!data.pdfBase64;
+    const hasContent = hasPdf || data.text.trim().length > 40;
+
 
     let monthly: StatementMonthly;
     let flags: string[];
