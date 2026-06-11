@@ -318,7 +318,14 @@ function StatementStep({
     setLoading(true);
     try {
       const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
-      const payload: Parameters<typeof analyze>[0]["data"] = {
+      const payload: {
+        text?: string;
+        pdfBase64?: string;
+        mimeType?: string;
+        filename?: string;
+        horizonYears: number;
+        currency: string;
+      } = {
         horizonYears: goals?.horizonYears ?? 10,
         currency: goals?.currency ?? "EUR",
       };
@@ -333,6 +340,7 @@ function StatementStep({
       } else {
         payload.text = await file.text();
       }
+
       const res = await analyze({ data: payload });
       setStatement(res);
     } catch (err) {
