@@ -317,16 +317,23 @@ function StatementStep({
     setFilename(file.name);
     setLoading(true);
     try {
-      // Best-effort read as text. For most CSVs this is clean; for PDFs it's
-      // garbage-with-strings — the server prompt tells the LLM to do its best.
-      const text = await file.text();
-      const res = await analyze({
-        data: {
-          text,
-          horizonYears: goals?.horizonYears ?? 10,
-          currency: goals?.currency ?? "EUR",
-        },
-      });
+      const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+      const payload: Parameters<typeof analyze>[0]["data"] = {
+        horizonYears: goals?.horizonYears ?? 10,
+        currency: goals?.currency ?? "EUR",
+      };
+      if (isPdf) {
+        const buf = await file.arrayBuffer();
+        const bytes = new Uint8Array(buf);
+        let bin = "";
+        for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+        payload.pdfBase64 = btoa(bin);
+        payload.mimeType = file.type || "application/pdf";
+        payload.filename = file.name;
+      } else {
+        payload.text = await file.text();
+      }
+      const res = await analyze({ data: payload });
       setStatement(res);
     } catch (err) {
       console.error(err);
@@ -335,6 +342,7 @@ function StatementStep({
       setLoading(false);
     }
   }
+
 
   function updateMonthly(patch: Partial<StatementMonthly>) {
     if (!statement || !goals) return;
