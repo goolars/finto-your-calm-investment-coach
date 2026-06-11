@@ -181,19 +181,31 @@ export const analyzeStatement = createServerFn({ method: "POST" })
 
     if (hasKey && hasContent) {
       try {
-        const trimmed = data.text.slice(0, 60_000);
+        const userContent: unknown = hasPdf
+          ? [
+              {
+                type: "text",
+                text: `Currency: ${data.currency}\n\nAnalyse the attached bank statement (PDF). Return STRICT JSON in the schema above.`,
+              },
+              {
+                type: "file",
+                file: {
+                  filename: data.filename || "statement.pdf",
+                  file_data: `data:${data.mimeType || "application/pdf"};base64,${data.pdfBase64}`,
+                },
+              },
+            ]
+          : `Currency: ${data.currency}\n\nStatement content (may be CSV or extracted PDF text):\n\n${data.text.slice(0, 60_000)}`;
         const reply = await callGateway({
           model: MODEL,
           messages: [
             { role: "system", content: STATEMENT_SYSTEM },
-            {
-              role: "user",
-              content: `Currency: ${data.currency}\n\nStatement content (may be CSV or extracted PDF text):\n\n${trimmed}`,
-            },
+            { role: "user", content: userContent },
           ],
           response_format: { type: "json_object" },
         });
         const parsed = JSON.parse(reply) as {
+
           monthly?: Partial<StatementMonthly>;
           behavioral_flags?: unknown;
           notes?: unknown;
