@@ -140,6 +140,8 @@ function Coach() {
       const res = await chat({
         data: {
           messages: next.map((m) => ({ role: m.role, content: m.content })),
+          personality,
+
           context: {
             goals: state.goals,
             target: summary?.target.allocation ?? null,
