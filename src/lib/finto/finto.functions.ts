@@ -147,7 +147,12 @@ function clampMonthly(m: Partial<StatementMonthly>): StatementMonthly {
     income_stability: stab(m.income_stability),
     essential_spend_avg: Math.max(0, num(m.essential_spend_avg, 0)),
     discretionary_spend_avg: Math.max(0, num(m.discretionary_spend_avg, 0)),
-    savings_rate: Math.max(-1, Math.min(1, num(m.savings_rate, 0))),
+    savings_rate: (() => {
+      let v = num(m.savings_rate, 0);
+      if (v > 1.5 || v < -1.5) v = v / 100; // model sometimes returns percent
+      return Math.max(-1, Math.min(1, v));
+    })(),
+
     buffer_months: Math.max(0, num(m.buffer_months, 0)),
     fixed_obligation_ratio: Math.max(0, Math.min(2, num(m.fixed_obligation_ratio, 0))),
     expense_volatility: vol(m.expense_volatility),
@@ -159,6 +164,9 @@ export const analyzeStatement = createServerFn({ method: "POST" })
     z
       .object({
         text: z.string().max(120_000).optional().default(""),
+        pdfBase64: z.string().max(15_000_000).optional(),
+        mimeType: z.string().optional(),
+        filename: z.string().optional(),
         horizonYears: z.number().min(0).max(80),
         currency: z.string().optional().default("EUR"),
       })
@@ -166,7 +174,9 @@ export const analyzeStatement = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }): Promise<StatementProfile> => {
     const hasKey = !!process.env.LOVABLE_API_KEY;
-    const hasContent = data.text.trim().length > 40;
+    const hasPdf = !!data.pdfBase64;
+    const hasContent = hasPdf || data.text.trim().length > 40;
+
 
     let monthly: StatementMonthly;
     let flags: string[];
@@ -176,19 +186,31 @@ export const analyzeStatement = createServerFn({ method: "POST" })
 
     if (hasKey && hasContent) {
       try {
-        const trimmed = data.text.slice(0, 60_000);
+        const userContent: unknown = hasPdf
+          ? [
+              {
+                type: "text",
+                text: `Currency: ${data.currency}\n\nAnalyse the attached bank statement (PDF). Return STRICT JSON in the schema above.`,
+              },
+              {
+                type: "file",
+                file: {
+                  filename: data.filename || "statement.pdf",
+                  file_data: `data:${data.mimeType || "application/pdf"};base64,${data.pdfBase64}`,
+                },
+              },
+            ]
+          : `Currency: ${data.currency}\n\nStatement content (may be CSV or extracted PDF text):\n\n${data.text.slice(0, 60_000)}`;
         const reply = await callGateway({
           model: MODEL,
           messages: [
             { role: "system", content: STATEMENT_SYSTEM },
-            {
-              role: "user",
-              content: `Currency: ${data.currency}\n\nStatement content (may be CSV or extracted PDF text):\n\n${trimmed}`,
-            },
+            { role: "user", content: userContent },
           ],
           response_format: { type: "json_object" },
         });
         const parsed = JSON.parse(reply) as {
+
           monthly?: Partial<StatementMonthly>;
           behavioral_flags?: unknown;
           notes?: unknown;
